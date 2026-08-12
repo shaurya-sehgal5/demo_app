@@ -1,30 +1,12 @@
 # PulseBoard
 
-A simple project & task tracking dashboard. Two-tier app: React (Vite) frontend + Express backend, no database required — data lives in memory on the backend.
+PulseBoard is a production‑ready project and team operations dashboard designed as a demo for the VeloCore platform. It showcases a modern SaaS UI with a React frontend, Node.js/Express backend, and PostgreSQL persistence.
 
-## Structure
-```
-pulseboard-demo/
-├── frontend/   React + Vite SPA, served by nginx (port 80)
-└── backend/    Node.js 22 + Express API (port 8080)
-```
+## Architecture
 
-## API
-| Method | Path             | Description               |
-|--------|------------------|----------------------------|
-| GET    | /api/health      | Health check               |
-| GET    | /api/projects    | List projects              |
-| POST   | /api/projects    | Create a project           |
-| GET    | /api/tasks       | List tasks                 |
-| POST   | /api/tasks       | Create a task               |
-| PATCH  | /api/tasks/:id   | Update task status          |
-| GET    | /api/stats       | Dashboard stats             |
+- **Frontend**: React + Vite, served as static build via Nginx.
+- **Backend**: Node.js + Express REST API.
+- **Database**: PostgreSQL.
+- **Communication**: Frontend uses relative `/api/*` paths (proxied by VeloCore).
 
-## Run locally
-```bash
-cd backend && npm install && npm start
-cd frontend && npm install && npm run dev
-```
-
-## Docker
-Frontend nginx proxies `/api/` to `BACKEND_HOST:BACKEND_PORT` (defaults `backend:8080`).
+## Project Structure
