@@ -1,152 +1,60 @@
-require('dotenv').config();
-
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg');
 
 const PORT = 8080;
 const HOST = '0.0.0.0';
 
-if (!process.env.DATABASE_URL) {
-  console.error('FATAL ERROR: DATABASE_URL environment variable is not set.');
-  console.error('PulseBoard backend requires a PostgreSQL connection string via DATABASE_URL.');
-  process.exit(1);
-}
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
 const VALID_STATUSES = ['todo', 'in-progress', 'done'];
 
-async function initDatabase() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      description TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
+let nextProjectId = 4;
+let nextTaskId = 7;
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id SERIAL PRIMARY KEY,
-      project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-      title VARCHAR(255) NOT NULL,
-      status VARCHAR(20) NOT NULL DEFAULT 'todo',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
+let projects = [
+  { id: 1, name: 'Website Revamp', description: 'Redesign the marketing site and improve page load performance.' },
+  { id: 2, name: 'Mobile App Launch', description: 'Prepare the mobile application for public release.' },
+  { id: 3, name: 'Internal Tooling', description: 'Build internal dashboards for the ops team.' },
+];
 
-  const { rows } = await pool.query('SELECT COUNT(*)::int AS count FROM projects;');
+let tasks = [
+  { id: 1, project_id: 1, title: 'Design new homepage layout', status: 'done' },
+  { id: 2, project_id: 1, title: 'Optimize image assets', status: 'in-progress' },
+  { id: 3, project_id: 2, title: 'Finalize app store listing', status: 'todo' },
+  { id: 4, project_id: 2, title: 'Fix onboarding flow bug', status: 'in-progress' },
+  { id: 5, project_id: 3, title: 'Set up deployment pipeline', status: 'done' },
+  { id: 6, project_id: 3, title: 'Build usage analytics dashboard', status: 'todo' },
+];
 
-  if (rows[0].count === 0) {
-    console.log('No existing data found. Seeding database with sample records...');
-
-    const projectInsert = await pool.query(
-      `INSERT INTO projects (name, description) VALUES
-        ($1, $2),
-        ($3, $4),
-        ($5, $6)
-       RETURNING id;`,
-      [
-        'Website Revamp', 'Redesign the marketing site and improve page load performance.',
-        'Mobile App Launch', 'Prepare the mobile application for public release.',
-        'Internal Tooling', 'Build internal dashboards for the ops team.',
-      ]
-    );
-
-    const [projectOneId, projectTwoId, projectThreeId] = projectInsert.rows.map((r) => r.id);
-
-    await pool.query(
-      `INSERT INTO tasks (project_id, title, status) VALUES
-        ($1, $2, $3),
-        ($4, $5, $6),
-        ($7, $8, $9),
-        ($10, $11, $12),
-        ($13, $14, $15),
-        ($16, $17, $18)`,
-      [
-        projectOneId, 'Design new homepage layout', 'done',
-        projectOneId, 'Optimize image assets', 'in-progress',
-        projectTwoId, 'Finalize app store listing', 'todo',
-        projectTwoId, 'Fix onboarding flow bug', 'in-progress',
-        projectThreeId, 'Set up deployment pipeline', 'done',
-        projectThreeId, 'Build usage analytics dashboard', 'todo',
-      ]
-    );
-
-    console.log('Seed data inserted successfully.');
-  }
+function withProjectName(task) {
+  const project = projects.find((p) => p.id === task.project_id);
+  return { ...task, project_name: project ? project.name : null };
 }
 
-app.get('/api/health', async (req, res) => {
-  try {
-    await pool.query('SELECT 1');
-    res.status(200).json({ status: 'healthy', database: 'connected' });
-  } catch (err) {
-    res.status(500).json({ status: 'unhealthy', database: 'disconnected' });
-  }
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'healthy', database: 'connected' });
 });
 
-app.get('/api/projects', async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      'SELECT id, name, description, created_at FROM projects ORDER BY id ASC;'
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error('Error fetching projects:', err);
-    res.status(500).json({ error: 'Failed to fetch projects' });
-  }
+app.get('/api/projects', (req, res) => {
+  res.json(projects);
 });
 
-app.get('/api/tasks', async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT tasks.id, tasks.title, tasks.status, tasks.project_id,
-              tasks.created_at, projects.name AS project_name
-       FROM tasks
-       LEFT JOIN projects ON tasks.project_id = projects.id
-       ORDER BY tasks.id ASC;`
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error('Error fetching tasks:', err);
-    res.status(500).json({ error: 'Failed to fetch tasks' });
-  }
+app.get('/api/tasks', (req, res) => {
+  res.json(tasks.map(withProjectName));
 });
 
-app.get('/api/stats', async (req, res) => {
-  try {
-    const { rows: projectRows } = await pool.query('SELECT COUNT(*)::int AS count FROM projects;');
-    const { rows: taskRows } = await pool.query('SELECT COUNT(*)::int AS count FROM tasks;');
-    const { rows: doneRows } = await pool.query(
-      "SELECT COUNT(*)::int AS count FROM tasks WHERE status = 'done';"
-    );
-    const { rows: inProgressRows } = await pool.query(
-      "SELECT COUNT(*)::int AS count FROM tasks WHERE status = 'in-progress';"
-    );
-
-    res.json({
-      totalProjects: projectRows[0].count,
-      totalTasks: taskRows[0].count,
-      completedTasks: doneRows[0].count,
-      inProgressTasks: inProgressRows[0].count,
-    });
-  } catch (err) {
-    console.error('Error fetching stats:', err);
-    res.status(500).json({ error: 'Failed to fetch stats' });
-  }
+app.get('/api/stats', (req, res) => {
+  res.json({
+    totalProjects: projects.length,
+    totalTasks: tasks.length,
+    completedTasks: tasks.filter((t) => t.status === 'done').length,
+    inProgressTasks: tasks.filter((t) => t.status === 'in-progress').length,
+  });
 });
 
-app.post('/api/tasks', async (req, res) => {
+app.post('/api/tasks', (req, res) => {
   const { title, project_id, status } = req.body;
 
   if (!title || typeof title !== 'string' || !title.trim()) {
@@ -155,88 +63,68 @@ app.post('/api/tasks', async (req, res) => {
 
   const taskStatus = status && VALID_STATUSES.includes(status) ? status : 'todo';
 
-  try {
-    let projectId = null;
-
-    if (project_id !== undefined && project_id !== null && project_id !== '') {
-      const parsedId = parseInt(project_id, 10);
-      if (Number.isNaN(parsedId)) {
-        return res.status(400).json({ error: 'project_id must be a valid number' });
-      }
-
-      const { rows: projectCheck } = await pool.query(
-        'SELECT id FROM projects WHERE id = $1;',
-        [parsedId]
-      );
-
-      if (projectCheck.length === 0) {
-        return res.status(400).json({ error: 'project_id does not reference an existing project' });
-      }
-
-      projectId = parsedId;
+  let projectId = null;
+  if (project_id !== undefined && project_id !== null && project_id !== '') {
+    const parsedId = parseInt(project_id, 10);
+    if (Number.isNaN(parsedId) || !projects.some((p) => p.id === parsedId)) {
+      return res.status(400).json({ error: 'project_id does not reference an existing project' });
     }
-
-    const { rows } = await pool.query(
-      `INSERT INTO tasks (project_id, title, status)
-       VALUES ($1, $2, $3)
-       RETURNING id, project_id, title, status, created_at;`,
-      [projectId, title.trim(), taskStatus]
-    );
-
-    res.status(201).json(rows[0]);
-  } catch (err) {
-    console.error('Error creating task:', err);
-    res.status(500).json({ error: 'Failed to create task' });
+    projectId = parsedId;
   }
+
+  const task = {
+    id: nextTaskId++,
+    project_id: projectId,
+    title: title.trim(),
+    status: taskStatus,
+  };
+
+  tasks.push(task);
+  res.status(201).json(withProjectName(task));
 });
 
-app.patch('/api/tasks/:id', async (req, res) => {
-  const { id } = req.params;
+app.patch('/api/tasks/:id', (req, res) => {
+  const parsedId = parseInt(req.params.id, 10);
   const { status } = req.body;
 
-  const parsedId = parseInt(id, 10);
   if (Number.isNaN(parsedId)) {
     return res.status(400).json({ error: 'Task id must be a valid number' });
   }
 
   if (!status || !VALID_STATUSES.includes(status)) {
-    return res.status(400).json({
-      error: `status must be one of: ${VALID_STATUSES.join(', ')}`,
-    });
+    return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
   }
 
-  try {
-    const { rows } = await pool.query(
-      `UPDATE tasks SET status = $1 WHERE id = $2
-       RETURNING id, project_id, title, status, created_at;`,
-      [status, parsedId]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
-
-    res.json(rows[0]);
-  } catch (err) {
-    console.error('Error updating task:', err);
-    res.status(500).json({ error: 'Failed to update task' });
+  const task = tasks.find((t) => t.id === parsedId);
+  if (!task) {
+    return res.status(404).json({ error: 'Task not found' });
   }
+
+  task.status = status;
+  res.json(withProjectName(task));
+});
+
+app.post('/api/projects', (req, res) => {
+  const { name, description } = req.body;
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Project name is required' });
+  }
+
+  const project = {
+    id: nextProjectId++,
+    name: name.trim(),
+    description: typeof description === 'string' ? description.trim() : '',
+  };
+
+  projects.push(project);
+  res.status(201).json(project);
 });
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
 
-async function start() {
-  try {
-    await initDatabase();
-    app.listen(PORT, HOST, () => {
-      console.log(`PulseBoard backend listening on http://${HOST}:${PORT}`);
-    });
-  } catch (err) {
-    console.error('Failed to start server:', err);
-    process.exit(1);
-  }
-}
-
-start();
+app.listen(PORT, HOST, () => {
+  console.log(`PulseBoard backend listening on http://${HOST}:${PORT}`);
+});

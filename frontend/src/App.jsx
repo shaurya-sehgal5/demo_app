@@ -1,11 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 
-const STATUS_LABELS = {
-  'todo': 'To Do',
-  'in-progress': 'In Progress',
-  'done': 'Done',
-};
-
+const STATUS_LABELS = { 'todo': 'To Do', 'in-progress': 'In Progress', 'done': 'Done' };
 const STATUS_ORDER = ['todo', 'in-progress', 'done'];
 
 function StatCard({ label, value }) {
@@ -18,11 +13,7 @@ function StatCard({ label, value }) {
 }
 
 function StatusBadge({ status }) {
-  return (
-    <span className={`status-badge status-${status}`}>
-      {STATUS_LABELS[status] || status}
-    </span>
-  );
+  return <span className={`status-badge status-${status}`}>{STATUS_LABELS[status] || status}</span>;
 }
 
 export default function App() {
@@ -36,6 +27,10 @@ export default function App() {
   const [newTaskProject, setNewTaskProject] = useState('');
   const [creating, setCreating] = useState(false);
 
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectDesc, setNewProjectDesc] = useState('');
+  const [showProjectForm, setShowProjectForm] = useState(false);
+
   const loadData = useCallback(async () => {
     try {
       setError('');
@@ -44,17 +39,10 @@ export default function App() {
         fetch('/api/projects'),
         fetch('/api/tasks'),
       ]);
-
-      if (!statsRes.ok || !projectsRes.ok || !tasksRes.ok) {
-        throw new Error('One or more requests failed');
-      }
-
+      if (!statsRes.ok || !projectsRes.ok || !tasksRes.ok) throw new Error('request failed');
       const [statsData, projectsData, tasksData] = await Promise.all([
-        statsRes.json(),
-        projectsRes.json(),
-        tasksRes.json(),
+        statsRes.json(), projectsRes.json(), tasksRes.json(),
       ]);
-
       setStats(statsData);
       setProjects(projectsData);
       setTasks(tasksData);
@@ -66,32 +54,20 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   async function handleCreateTask(e) {
     e.preventDefault();
-
     if (!newTaskTitle.trim()) return;
-
     setCreating(true);
     setError('');
-
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: newTaskTitle.trim(),
-          project_id: newTaskProject || null,
-        }),
+        body: JSON.stringify({ title: newTaskTitle.trim(), project_id: newTaskProject || null }),
       });
-
-      if (!res.ok) {
-        throw new Error('Failed to create task');
-      }
-
+      if (!res.ok) throw new Error('failed');
       setNewTaskTitle('');
       setNewTaskProject('');
       await loadData();
@@ -103,6 +79,27 @@ export default function App() {
     }
   }
 
+  async function handleCreateProject(e) {
+    e.preventDefault();
+    if (!newProjectName.trim()) return;
+    setError('');
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newProjectName.trim(), description: newProjectDesc.trim() }),
+      });
+      if (!res.ok) throw new Error('failed');
+      setNewProjectName('');
+      setNewProjectDesc('');
+      setShowProjectForm(false);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      setError('Could not create the project. Please try again.');
+    }
+  }
+
   async function handleStatusChange(taskId, newStatus) {
     try {
       const res = await fetch(`/api/tasks/${taskId}`, {
@@ -110,11 +107,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
-
-      if (!res.ok) {
-        throw new Error('Failed to update task');
-      }
-
+      if (!res.ok) throw new Error('failed');
       await loadData();
     } catch (err) {
       console.error(err);
@@ -144,19 +137,39 @@ export default function App() {
 
           <section className="content-grid">
             <div className="panel">
-              <h2>Projects</h2>
+              <div className="panel-header">
+                <h2>Projects</h2>
+                <button className="link-button" onClick={() => setShowProjectForm((v) => !v)}>
+                  {showProjectForm ? 'Cancel' : '+ New Project'}
+                </button>
+              </div>
+
+              {showProjectForm && (
+                <form className="new-project-form" onSubmit={handleCreateProject}>
+                  <input
+                    type="text"
+                    placeholder="Project name"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Short description (optional)"
+                    value={newProjectDesc}
+                    onChange={(e) => setNewProjectDesc(e.target.value)}
+                  />
+                  <button type="submit" disabled={!newProjectName.trim()}>Add Project</button>
+                </form>
+              )}
+
               <ul className="project-list">
                 {projects.map((project) => (
                   <li key={project.id} className="project-item">
                     <div className="project-name">{project.name}</div>
-                    {project.description && (
-                      <div className="project-description">{project.description}</div>
-                    )}
+                    {project.description && <div className="project-description">{project.description}</div>}
                   </li>
                 ))}
-                {projects.length === 0 && (
-                  <li className="empty-state">No projects yet.</li>
-                )}
+                {projects.length === 0 && <li className="empty-state">No projects yet.</li>}
               </ul>
             </div>
 
@@ -171,16 +184,10 @@ export default function App() {
                   onChange={(e) => setNewTaskTitle(e.target.value)}
                   disabled={creating}
                 />
-                <select
-                  value={newTaskProject}
-                  onChange={(e) => setNewTaskProject(e.target.value)}
-                  disabled={creating}
-                >
+                <select value={newTaskProject} onChange={(e) => setNewTaskProject(e.target.value)} disabled={creating}>
                   <option value="">No project</option>
                   {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
+                    <option key={project.id} value={project.id}>{project.name}</option>
                   ))}
                 </select>
                 <button type="submit" disabled={creating || !newTaskTitle.trim()}>
@@ -193,28 +200,19 @@ export default function App() {
                   <li key={task.id} className="task-item">
                     <div className="task-main">
                       <span className="task-title">{task.title}</span>
-                      {task.project_name && (
-                        <span className="task-project">{task.project_name}</span>
-                      )}
+                      {task.project_name && <span className="task-project">{task.project_name}</span>}
                     </div>
                     <div className="task-actions">
                       <StatusBadge status={task.status} />
-                      <select
-                        value={task.status}
-                        onChange={(e) => handleStatusChange(task.id, e.target.value)}
-                      >
+                      <select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value)}>
                         {STATUS_ORDER.map((status) => (
-                          <option key={status} value={status}>
-                            {STATUS_LABELS[status]}
-                          </option>
+                          <option key={status} value={status}>{STATUS_LABELS[status]}</option>
                         ))}
                       </select>
                     </div>
                   </li>
                 ))}
-                {tasks.length === 0 && (
-                  <li className="empty-state">No tasks yet.</li>
-                )}
+                {tasks.length === 0 && <li className="empty-state">No tasks yet.</li>}
               </ul>
             </div>
           </section>
@@ -222,7 +220,7 @@ export default function App() {
       )}
 
       <footer className="app-footer">
-        <span>PulseBoard demo application &mdash; deployed with VeloCore</span>
+        <span>PulseBoard demo application</span>
       </footer>
     </div>
   );

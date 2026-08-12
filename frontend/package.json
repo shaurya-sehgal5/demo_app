@@ -1,7 +1,6 @@
 {
   "name": "pulseboard-frontend",
   "version": "1.0.0",
-  "description": "PulseBoard frontend (React + Vite)",
   "private": true,
   "type": "module",
   "scripts": {
